@@ -9,7 +9,7 @@ import vg.civcraft.mc.civmodcore.ACivMod;
 
 public class FactoryMod extends ACivMod {
 	private FactoryModManager manager;
-	private static FactoryMod plugin;
+	static FactoryMod plugin;
 	private FactoryModPermissionManager permissionManager;
 	private FMCommandManager commandManager;
 

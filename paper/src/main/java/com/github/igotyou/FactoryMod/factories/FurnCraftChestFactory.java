@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import com.github.igotyou.FactoryMod.utility.MultiInventoryWrapper;
 import org.bukkit.Bukkit;
@@ -281,9 +282,10 @@ public class FurnCraftChestFactory extends Factory implements IIOFInventoryProvi
 					setRecipe(autoRepair);
 				}
 			}
-			if (!hasInputMaterials() || (!rm.inDisrepair() && (currentRecipe instanceof  RepairRecipe))) {
-				//Let autoselect find something to run that isn't the repair recipe
-				IRecipe autoSelected = getAutoSelectRecipe();
+
+			// Try to auto-select a recipe we can run if we ran out of input materials
+			if (!hasInputMaterials()) {
+				IRecipe autoSelected = autoSelectRecipe();
 				if (autoSelected == null) {
 					if (p != null) {
 						p.sendMessage(ChatColor.RED + "Not enough materials available to run any recipe");
@@ -293,7 +295,6 @@ public class FurnCraftChestFactory extends Factory implements IIOFInventoryProvi
 					if (p != null) {
 						p.sendMessage(ChatColor.GOLD + "Automatically selected recipe " + autoSelected.getName());
 					}
-					setRecipe(autoSelected);
 				}
 			}
 		} else {
@@ -538,10 +539,9 @@ public class FurnCraftChestFactory extends Factory implements IIOFInventoryProvi
 					if (pm.powerAvailable(1)) {
 						//not enough materials, but if auto select is on, we might find another recipe to run
 						if (!hasInputMaterials() && isAutoSelect())  {
-							IRecipe nextOne = getAutoSelectRecipe();
+							IRecipe nextOne = autoSelectRecipe();
 							if (nextOne != null) {
 								sendActivatorMessage(ChatColor.GREEN + name + " automatically switched to recipe " + nextOne.getName() + " and began running it");
-								currentRecipe = nextOne;
 							}
 							else {
 								deactivate();
@@ -557,9 +557,8 @@ public class FurnCraftChestFactory extends Factory implements IIOFInventoryProvi
 				}
 			} else {
 				IRecipe nextOne;
-				if (isAutoSelect() && (nextOne = getAutoSelectRecipe()) != null)  {
+				if (isAutoSelect() && (nextOne = autoSelectRecipe()) != null)  {
 					sendActivatorMessage(ChatColor.GREEN + name + " automatically switched to recipe " + nextOne.getName() + " and began running it");
-					currentRecipe = nextOne;
 					scheduleUpdate();
 					// don't setPowerCounter to 0, fuel has been consumed, let it be used for the new recipe
 				} else {
@@ -672,18 +671,34 @@ public class FurnCraftChestFactory extends Factory implements IIOFInventoryProvi
 	}
 
 	/**
-	 * @return a recipe which the factory contains enough ressources to run except repair type recipes,
-	 * returns null if none exists
-	 *
+	 * Auto-selects a recipe which the factory contains enough resources to run except repair type recipes.
+	 * @return null if no suitable recipe was found
 	 */
-
-	public IRecipe getAutoSelectRecipe() {
-		for (IRecipe rec : recipes) {
-			if (rec.enoughMaterialAvailable(getInventory()) && !(rec instanceof RepairRecipe)) {
-				return rec;
-			}
+	public IRecipe autoSelectRecipe() {
+		// Sanity check - continue to use the current recipe if we have materials
+		if (hasInputMaterials()) {
+			return currentRecipe;
 		}
-		return null;
+
+		var selectedRecipe = recipes.stream()
+				.filter(it -> {
+					// We want to select a repair recipe if and only if the factory is in disrepair
+					if (rm.inDisrepair()) {
+						return it instanceof RepairRecipe;
+					} else {
+						return !(it instanceof RepairRecipe);
+					}
+				})
+				.filter(it -> it.enoughMaterialAvailable(getInputInventory()))
+				.findFirst()
+				.orElse(null);
+
+		if (selectedRecipe != null) {
+			LoggingUtils.log("Auto-selected recipe " + selectedRecipe.getName());
+			setRecipe(selectedRecipe);
+		}
+
+		return selectedRecipe;
 	}
 
 	/**
